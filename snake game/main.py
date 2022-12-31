@@ -34,12 +34,12 @@ while game_is_on:
         scoreboard.update_score()
 
     if sk.head.xcor() > boundary or sk.head.xcor() < -boundary or sk.head.ycor() > boundary or sk.head.ycor() < -boundary:
-        game_is_on = False
-        scoreboard.game_over()
+        scoreboard.reset()
+        sk.reset()
 
     for segment in sk.segments[1:]:
         if sk.head.distance(segment) < 15:
-            game_is_on = False
-            scoreboard.game_over()
+            scoreboard.reset()
+            sk.reset()
 
 screen.exitonclick()
