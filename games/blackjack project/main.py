@@ -1,5 +1,5 @@
 import random
-from replit import clear
+import os
 from art import logo
 
 cards = [11, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10]
@@ -74,6 +74,6 @@ def play_game():
 
   print(f'Computer\'s final hand was {computer_cards} and final score was {comp_score}.\n')
   
-  while input('Do you want to play a game of Blackjack? "y" or "n": ') == 'y':
-  clear()
+while input('Do you want to play a game of Blackjack? "y" or "n": ') == 'y':
+  os.system('cls')
   play_game()
