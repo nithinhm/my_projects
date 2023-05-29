@@ -25,7 +25,7 @@ while k <= final_number:
     usn_bar = driver.find_element_by_name('lns')
     usn_bar.send_keys(usn)
 
-    captcha_bar = driver.find_element_by_name('captchacode')
+    captcha_bar = driver.find_element_by_xpath('//*[@id="raj"]/div[2]/div[1]/label')
     captcha_bar.click()
 
     try:
