@@ -5,15 +5,13 @@ import pandas as pd
 import numpy as np
 
 
-batch = '21'
-branch = 'ME'
-final_number = 11
+batch = '21'        # enter batch year as in USN (4th and 5th character)
+branch = 'ME'       # enter branch as in USN (6th and 7th character)
+final_number = 11   # enter the last number of this branch's last student as in USN (do not include padded zeros)
 
 df = pd.DataFrame()
 
-driver_path = 'C:\dev\chromedriver.exe'
-
-driver = webdriver.Chrome(driver_path)
+driver = webdriver.Chrome('chromedriver.exe')
 
 url = 'https://results.vtu.ac.in/JFEcbcs23/index.php'
 
