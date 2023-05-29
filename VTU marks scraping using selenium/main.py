@@ -1,4 +1,5 @@
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions
 import pandas as pd
@@ -6,8 +7,8 @@ import numpy as np
 
 
 batch = '21'        # enter batch year as in USN (4th and 5th character)
-branch = 'ME'       # enter branch as in USN (6th and 7th character)
-final_number = 11   # enter the last number of this branch's last student as in USN (do not include padded zeros)
+branch = 'MT'       # enter branch as in USN (6th and 7th character)
+final_number = 13   # enter the last number of this branch's last student as in USN (do not include padded zeros)
 
 df = pd.DataFrame()
 
@@ -22,14 +23,14 @@ k = 1
 while k <= final_number:
     usn = '1AM' + batch + branch + f'{k}'.zfill(3)
 
-    usn_bar = driver.find_element_by_name('lns')
+    usn_bar = driver.find_element(By.NAME ,'lns')
     usn_bar.send_keys(usn)
 
-    captcha_bar = driver.find_element_by_xpath('//*[@id="raj"]/div[2]/div[1]/label')
+    captcha_bar = driver.find_element(By.XPATH ,'//*[@id="raj"]/div[2]/div[1]/label')
     captcha_bar.click()
 
     try:
-        WebDriverWait(driver, timeout=100).until(lambda d: d.find_element_by_xpath(
+        WebDriverWait(driver, timeout=100).until(lambda d: d.find_element(By.XPATH ,
             '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[3]/div[3]/table/tbody/tr[2]/td/b[2]'))
     except:
         alert = WebDriverWait(driver, timeout=5).until(expected_conditions.alert_is_present())
@@ -42,24 +43,24 @@ while k <= final_number:
             alert.accept()
             continue
 
-    student_name = driver.find_element_by_xpath(
+    student_name = driver.find_element(By.XPATH,
         '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[2]/td[2]').text.split(':')[
         1].strip()
-    student_usn = driver.find_element_by_xpath(
+    student_usn = driver.find_element(By.XPATH,
         '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[1]/td[2]').text.split(':')[
         1].strip()
 
     assert student_usn == usn, 'entered usn and obtained usn don\'t match'
 
-    marks_data = driver.find_element_by_xpath(
+    marks_data = driver.find_element(By.XPATH,
         '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[2]/div/div[1]/div[2]')
 
     data_array = np.zeros(shape=(9, 7), dtype=object)
 
-    row_tags = marks_data.find_elements_by_css_selector('.divTableRow')
+    row_tags = marks_data.find_elements(By.CSS_SELECTOR, '.divTableRow')
 
     for i in range(len(row_tags)):
-        data_array[i] = [x.text for x in row_tags[i].find_elements_by_css_selector('.divTableCell')]
+        data_array[i] = [x.text for x in row_tags[i].find_elements(By.CSS_SELECTOR, '.divTableCell')]
 
     data_array = data_array[:, :-1]
 
