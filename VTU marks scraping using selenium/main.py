@@ -87,4 +87,6 @@ df2.columns = [('USN',''),('Student Name','')] + list_of_tuples
 df2.columns = pd.MultiIndex.from_tuples(df2.columns, names=['',''])
 df2.index+=1
 
+df2 = df2.apply(pd.to_numeric, errors='ignore')
+
 df2.to_excel(f'20{batch} {branch} VTU results.xlsx')
