@@ -2,106 +2,170 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.common.exceptions import *
 import pandas as pd
-import numpy as np
+from bs4 import BeautifulSoup
+import time
+
+batch = input('enter batch year as in USN (4th and 5th character): ')
+branch = input('enter branch as in USN (6th and 7th character): ').upper()
+first_number = int(input("enter the first number of this branch's USN (do not include padded zeros): "))
+final_number = int(input("enter the last number of this branch's USN (do not include padded zeros): "))
+retry_delay = int(input('If there are network issues, how many seconds do you wish to wait before retrying again?: '))
+max_retries = int(input('How many times do you wish to retry before ending the session?: '))
+url = input('Enter the URL of the results login page. (starts with https://): ')
+
+skipped_usns = []
+data_dict = {}
 
 options = Options()
 options.unhandled_prompt_behavior = 'ignore'
 
-batch = '22'  # enter batch year as in USN (4th and 5th character)
-branch = 'CS'  # enter branch as in USN (6th and 7th character)
-final_number = 3  # enter the last number of this branch's last student as in USN (do not include padded zeros)
-
-df = pd.DataFrame()
-
-driver = webdriver.Chrome('chromedriver.exe', options=options)
-
-url = 'https://results.vtu.ac.in/JJEcbcs23/index.php'
+service = ChromeService(executable_path='/chromedriver.exe')
+driver = webdriver.Chrome(service=service, options=options)
 
 driver.get(url)
 
-skipped_usns = []
+k = first_number - 1
 
-k = 1
+window_is_present = True
 
-while k <= final_number:
-    usn = '1AM' + batch + branch + f'{k}'.zfill(3)
-
-    usn_bar = driver.find_element(By.NAME, 'lns')
-    usn_bar.send_keys(usn)
-
-    captcha_bar = driver.find_element(By.XPATH, '//*[@id="raj"]/div[2]/div[1]/label')
-    captcha_bar.click()
-
-    try:
-        WebDriverWait(driver, 100).until_not(lambda d: d.find_element(By.NAME, 'lns'))
-
-    except:
-        alert = WebDriverWait(driver, 1).until(expected_conditions.alert_is_present())
-        print(f'Error for {usn} because {alert.text}')
-
-        if alert.text == 'University Seat Number is not available or Invalid..!':
-            k += 1
-            skipped_usns.append(usn)
-            alert.accept()
-            continue
-        else:
-            alert.accept()
-            continue
-
-    student_name = driver.find_element(By.XPATH,
-                                       '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[2]/td[2]').text.split(
-        ':')[1].strip()
-    student_usn = driver.find_element(By.XPATH,
-                                      '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[1]/td[2]').text.split(
-        ':')[1].strip()
-
-    assert student_usn == usn, 'entered usn and obtained usn don\'t match'
-
-    marks_data = driver.find_element(By.XPATH,
-                                     '//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[2]/div/div[1]/div[2]')
-
-    row_tags = marks_data.find_elements(By.CSS_SELECTOR, '.divTableRow')
-
-    total_rows = len(row_tags)
-
-    total_columns = len(row_tags[0].find_elements(By.CSS_SELECTOR, '.divTableCell'))
-
-    data_array = np.empty((total_rows, total_columns), dtype=object)
-
-    for i in range(total_rows):
-        data_array[i] = [x.text for x in row_tags[i].find_elements(By.CSS_SELECTOR, '.divTableCell')]
-
-    data_array = data_array[:, :-1]
-
-    if k == 1:
-        header_names = data_array[0][2:]
-        subject_names = data_array[:, 1][1:]
-
-        list_of_tuples = []
-
-        for i in subject_names:
-            for j in header_names:
-                list_of_tuples.append((i, j))
-
-    df[student_usn] = np.concatenate((np.array([student_name]), data_array[1:, 2:].flatten()))
-
-    print(f'Data successsfully collected for {usn}')
-
-    driver.back()
-
+while k < final_number and window_is_present:
+    
     k += 1
+    this_retry = 0
+    while this_retry < max_retries:
+        try:
+            usn = f'1AM{batch}{branch}{k:03d}'
+
+            usn_bar = driver.find_element(By.NAME, 'lns')
+            usn_bar.send_keys(usn)
+
+            captcha_bar = driver.find_element(By.XPATH, '//*[@id="raj"]/div[2]/div[1]/label')
+            captcha_bar.click()
+
+            try:
+                WebDriverWait(driver, 300).until_not(lambda d: d.find_element(By.NAME, 'lns'))
+
+            except UnexpectedAlertPresentException:
+                alert = WebDriverWait(driver, 1).until(EC.alert_is_present())
+                alert_text = alert.text
+
+                print(f'Error for {usn} because {alert_text}')
+
+                if alert_text == 'University Seat Number is not available or Invalid..!':
+                    k += 1
+                    skipped_usns.append(usn)
+                    alert.accept()
+                else:
+                    alert.accept()
+                
+                continue
+
+            student_name = driver.find_element(By.XPATH,'//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[2]/td[2]').text.split(':')[1].strip()
+            student_usn = driver.find_element(By.XPATH,'//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[1]/td[2]').text.split(':')[1].strip()
+
+            assert student_usn == usn, 'entered usn and obtained usn don\'t match'
+
+            html = driver.page_source
+            soup = BeautifulSoup(html, 'lxml')
+
+            marks_data = soup.find('div', class_='divTableBody')
+
+            data_dict[f'{student_usn}+{student_name}'] = marks_data
+
+            print(f'Data successsfully collected for {usn}')
+
+            driver.back()
+
+            break
+
+        except UnexpectedAlertPresentException:
+            alert = WebDriverWait(driver, 1).until(EC.alert_is_present())
+            alert_text = alert.text
+
+            print(f'Error for {usn} because {alert_text}')
+
+            if alert_text == 'University Seat Number is not available or Invalid..!':
+                k += 1
+                skipped_usns.append(usn)
+                alert.accept()
+            else:
+                alert.accept()
+
+        except NoSuchWindowException:
+            print('Window closed prematurely. Data collected so far will be saved.')
+            window_is_present = False
+            break
+
+        except:
+            soup2 = BeautifulSoup(driver.page_source, 'lxml')
+            occur = soup2.find_all('b', string='University Seat Number')
+            if len(occur) > 0:
+                print(f'There was an error collecting data for {usn}. Let\'s try again.')
+                driver.back()
+            else:
+                print(f'Encountered an error. Retrying after {retry_delay} seconds. Retry {this_retry+1}/{max_retries}')
+                this_retry += 1
+                time.sleep(retry_delay)
+                driver.refresh()
+
+    else:
+        try:
+            print(f'Maximum number of retries reached ({max_retries}). Data collected so far will be saved.')
+            break
+        except NoSuchWindowException:
+            print('Window closed prematurely. Data collected so far will be saved.')
+            window_is_present = False
+            break
 
 driver.quit()
 
-print(f'These usns were skipped {skipped_usns}')
+if len(skipped_usns) > 0:
+    print(f'These USNs were skipped {skipped_usns}')
+else:
+    print('No USNs were skipped')
 
-df2 = df.T.reset_index()
-df2.columns = [('USN', ''), ('Student Name', '')] + list_of_tuples
-df2.columns = pd.MultiIndex.from_tuples(df2.columns, names=['', ''])
-df2.index += 1
+list_of_student_dfs = []
 
-df2 = df2.apply(pd.to_numeric, errors='ignore')
+for id, marks_data in data_dict.items():
 
-df2.to_excel(f'20{batch} {branch} VTU results.xlsx')
+    this_usn, this_name = tuple(id.split('+'))
+    rows = marks_data.find_all('div', class_='divTableRow')
+
+    data = []
+    for row in rows:
+        cells = row.find_all('div', class_='divTableCell')
+        data.append([cell.text.strip() for cell in cells])
+    
+    df_temp = pd.DataFrame(data[1:], columns=data[0])
+
+    subjects = [f'{name} ({code})' for name, code in zip(df_temp['Subject Name'], df_temp['Subject Code'])]
+    headers = df_temp.columns[2:-1]
+
+    ready_columns = [(name, header) for name in subjects for header in headers]
+
+    student_df = pd.DataFrame([this_usn, this_name] + list(df_temp.iloc[:,2:-1].to_numpy().flatten()), index= [('USN',''), ('Student Name','')] + ready_columns).T
+    student_df.columns = pd.MultiIndex.from_tuples(student_df.columns, names=['', ''])
+
+    list_of_student_dfs.append(student_df)
+
+final_df = pd.concat(list_of_student_dfs).reset_index(drop=True)
+
+cols = list(final_df.columns)[2:]
+cols.sort(key = lambda x: x[0].split('(')[1][5:-1])
+final_df = final_df[[('USN',''), ('Student Name','')] + cols]
+
+final_df.index += 1
+
+df2 = final_df.apply(pd.to_numeric, errors='ignore')
+
+collected_usns = list(df2['USN'])
+
+first_USN, last_USN = collected_usns[0], collected_usns[-1]
+
+df2.to_excel(f'20{batch} {branch} {first_USN} to {last_USN} VTU results.xlsx')
+
+print(f'Data collected for USNs {branch} {first_USN} to {last_USN} and saved in an excel file')
