@@ -5,9 +5,34 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.common.exceptions import *
+from PIL import Image
+from io import BytesIO
+import pytesseract
 import pandas as pd
 from bs4 import BeautifulSoup
 import time
+
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+def get_captcha_from_image(target_image):
+    image_data = BytesIO(target_image)
+
+    image = Image.open(image_data)
+    width, height = image.size
+
+    image = image.convert("RGB")
+
+    white_image = Image.new("RGB", (width, height), "white")
+
+    for x in range(width):
+        for y in range(height):
+            pixel = image.getpixel((x, y))
+
+            if pixel == (102, 102, 102):
+                white_image.putpixel((x, y), pixel)
+
+    return pytesseract.image_to_string(white_image).strip()
 
 
 skipped_usns = []
@@ -17,6 +42,7 @@ data_dict = {}
 service = ChromeService(executable_path='/chromedriver.exe')
 options = Options()
 options.unhandled_prompt_behavior = 'ignore'
+
 
 art = '''
    *                       (                                                                     (                         
@@ -32,8 +58,8 @@ art = '''
 
 print(art)
 
-print("\nWelcome to the VTU marks scraping app developed by Prof. Nithin H M, Assistant Professor, AMC Engineering College.")
-print("\nProcedure:\n1. Fill the details as mentioned below.\n2. When the browser opens, wait till the USN is auto-filled, enter the CAPTCHA and hit enter.\n3. The marks data is collected for that student and the process repeats.\n4. You can keep an eye on this console to check for status updates or errors that occur.")
+print("\nWelcome to the VTU marks scraping app.\n\nApp developed by\nProf. Nithin H M\nAssistant Professor\nDepartment of Physics\nAMC Engineering College\nBangalore - 560083.")
+print("\nProcedure:\n1. Fill the details as mentioned below and press enter.\n2. Sit back and relax.\n3. You can keep an eye on this console to check for status updates or errors that occur.")
 
 print('\nExample USN: 1AM22CS010')
 
@@ -138,45 +164,32 @@ while k < final_number and window_is_present:
         try:
             usn = f'{coll_code}{batch}{branch}{k:03d}'
 
-            usn_bar = driver.find_element(By.NAME, 'lns')
-            usn_bar.send_keys(usn)
+            driver.find_element(By.NAME, 'lns').send_keys(usn)
 
-            captcha_bar = driver.find_element(By.XPATH, '//*[@id="raj"]/div[2]/div[1]/label')
-            captcha_bar.click()
+            captcha_image = driver.find_element(By.XPATH, '//*[@id="raj"]/div[2]/div[2]/img').screenshot_as_png
+            captcha_text = get_captcha_from_image(captcha_image)
 
-            try:
-                WebDriverWait(driver, 300).until_not(lambda d: d.find_element(By.NAME, 'lns'))
-
-            except UnexpectedAlertPresentException:
-                alert = WebDriverWait(driver, 1).until(EC.alert_is_present())
-                alert_text = alert.text
-
-                print(f'\nError for {usn} because {alert_text}')
-
-                if alert_text == 'University Seat Number is not available or Invalid..!':
-                    print('Let\'s move to the next USN.\n')
-                    k += 1
-                    skipped_usns.append(usn)
-                    alert.accept()
-                else:
-                    print('Let\'s try again.\n')
-                    alert.accept()
-                
+            if len(captcha_text) != 6:
+                print("\nError! The length of CAPTCHA is invalid. Trying again.")
+                driver.refresh()
                 continue
+
+            driver.find_element(By.NAME, 'captchacode').send_keys(captcha_text)
+
+            driver.find_element(By.ID, 'submit').click()
 
             student_name = driver.find_element(By.XPATH,'//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[2]/td[2]').text.split(':')[1].strip()
             student_usn = driver.find_element(By.XPATH,'//*[@id="dataPrint"]/div[2]/div/div/div[2]/div[1]/div/div/div[1]/div/table/tbody/tr[1]/td[2]').text.split(':')[1].strip()
 
-            assert student_usn == usn, 'entered usn and obtained usn don\'t match'
-
-            html = driver.page_source
-            soup = BeautifulSoup(html, 'lxml')
+            soup = BeautifulSoup(driver.page_source, 'lxml')
 
             marks_data = soup.find('div', class_='divTableBody')
 
             data_dict[f'{student_usn}+{student_name}'] = marks_data
 
-            print(f'Data successsfully collected for {usn}')
+            print(f'\nData successsfully collected for {usn}')
+
+            time.sleep(3)
 
             driver.back()
 
@@ -186,19 +199,19 @@ while k < final_number and window_is_present:
             alert = WebDriverWait(driver, 1).until(EC.alert_is_present())
             alert_text = alert.text
 
-            print(f'Error for {usn} because {alert_text}.\n')
+            print(f'\nError for {usn} because {alert_text}.')
 
             if alert_text == 'University Seat Number is not available or Invalid..!':
-                print('Let\'s move to the next USN.\n')
+                print('Moving to the next USN.')
                 k += 1
                 skipped_usns.append(usn)
                 alert.accept()
             else:
-                print('Let\'s try again.\n')
+                print('Trying again.')
                 alert.accept()
 
         except NoSuchWindowException:
-            print('Error! Window closed prematurely. Data collected so far will be saved.\n')
+            print('\nError! Window closed prematurely. Data collected so far will be saved.')
             window_is_present = False
             break
 
@@ -206,19 +219,19 @@ while k < final_number and window_is_present:
             soup2 = BeautifulSoup(driver.page_source, 'lxml')
             occur = soup2.find_all('b', string='University Seat Number')
             if len(occur) > 0:
-                print(f'There was an error collecting data for {usn}. Let\'s try again.\n')
+                print(f'\nThere was an error collecting data for {usn}. Trying again.')
                 driver.back()
             else:
-                print(f'Error! Retrying after {retry_delay} seconds. Retry {this_retry+1} of {max_retries}\n')
+                print(f'\nError! Retrying after {retry_delay} seconds. Retry {this_retry+1} of {max_retries}')
                 this_retry += 1
                 time.sleep(retry_delay)
                 driver.refresh()
 
     else:
         try:
-            print(f'Maximum number of retries reached ({max_retries}). Data collected so far will be saved.\n')
+            print(f'\nMaximum number of retries reached ({max_retries}). Data collected so far will be saved.')
         except NoSuchWindowException:
-            print('Error! Window closed prematurely. Data collected so far will be saved.\n')
+            print('\nError! Window closed prematurely. Data collected so far will be saved.')
             window_is_present = False
         finally:
             break
@@ -257,7 +270,7 @@ for id, marks_data in data_dict.items():
 final_df = pd.concat(list_of_student_dfs).reset_index(drop=True)
 
 cols = list(final_df.columns)[2:]
-cols.sort(key = lambda x: x[0].split('(')[1][5:-1])
+cols.sort(key = lambda x: x[0].split('(')[-1][5:-1])
 final_df = final_df[[('USN',''), ('Student Name','')] + cols]
 
 final_df.index += 1
